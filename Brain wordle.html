@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neuro Wordle</title>
+  <style>
+    :root {
+      --bg: #121213;
+      --text: #ffffff;
+      --muted: #d7dadc;
+      --tile-border: #3a3a3c;
+      --tile-filled-border: #565758;
+      --correct: #538d4e;
+      --present: #b59f3b;
+      --absent: #3a3a3c;
+      --key-bg: #818384;
+      --button-bg: #2eaadc;
+      --button-hover: #2493bf;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    h1 {
+      margin: 10px 0 8px;
+      letter-spacing: 2px;
+      text-align: center;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 18px;
+      max-width: 700px;
+      line-height: 1.4;
+    }
+
+    #message {
+      min-height: 24px;
+      margin-bottom: 12px;
+      font-weight: bold;
+      text-align: center;
+    }
+
+    #board {
+      display: grid;
+      grid-template-rows: repeat(6, 1fr);
+      gap: 6px;
+      margin-bottom: 22px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: repeat(5, 62px);
+      gap: 6px;
+    }
+
+    .tile {
+      width: 62px;
+      height: 62px;
+      border: 2px solid var(--tile-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-transform: uppercase;
+      font-size: 2rem;
+      font-weight: bold;
+      user-select: none;
+    }
+
+    .tile.filled {
+      border-color: var(--tile-filled-border);
+    }
+
+    .tile.correct {
+      background: var(--correct);
+      border-color: var(--correct);
+    }
+
+    .tile.present {
+      background: var(--present);
+      border-color: var(--present);
+    }
+
+    .tile.absent {
+      background: var(--absent);
+      border-color: var(--absent);
+    }
+
+    #keyboard {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      max-width: 520px;
+    }
+
+    .keyboard-row {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .key {
+      border: none;
+      border-radius: 4px;
+      height: 58px;
+      min-width: 43px;
+      padding: 0 12px;
+      background: var(--key-bg);
+      color: white;
+      font-weight: bold;
+      text-transform: uppercase;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+
+    .key.wide {
+      min-width: 72px;
+      font-size: 0.8rem;
+    }
+
+    .key.correct {
+      background: var(--correct);
+    }
+
+    .key.present {
+      background: var(--present);
+    }
+
+    .key.absent {
+      background: var(--absent);
+    }
+
+    .controls {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      min-height: 44px;
+    }
+
+    .controls button {
+      border: none;
+      border-radius: 6px;
+      padding: 10px 16px;
+      font-weight: bold;
+      cursor: pointer;
+      background: var(--button-bg);
+      color: white;
+      font-size: 0.95rem;
+    }
+
+    .controls button:hover {
+      background: var(--button-hover);
+    }
+
+    #answer {
+      margin-top: 12px;
+      color: var(--muted);
+      text-align: center;
+      min-height: 22px;
+      font-size: 1rem;
+    }
+
+    @media (max-width: 520px) {
+      .row {
+        grid-template-columns: repeat(5, 52px);
+      }
+
+      .tile {
+        width: 52px;
+        height: 52px;
+        font-size: 1.7rem;
+      }
+
+      .key {
+        height: 50px;
+        min-width: 32px;
+        padding: 0 8px;
+        font-size: 0.85rem;
+      }
+
+      .key.wide {
+        min-width: 58px;
+        font-size: 0.72rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>NEURO WORDLE</h1>
+  <div class="subtitle">
+    Guess the 5-letter answer in 6 tries.
+  </div>
+
+  <div id="message"></div>
+  <div id="board"></div>
+  <div id="keyboard"></div>
+
+  <div class="controls" id="controls"></div>
+  <div id="answer"></div>
+
+  <script>
+    const ROWS = 6;
+    const COLS = 5;
+
+    // Fixed answer for this edition
+    const SECRET_WORD = "gyrus".toLowerCase();
+
+    let currentRow = 0;
+    let currentCol = 0;
+    let board = [];
+    let gameOver = false;
+    let keyStates = {};
+
+    const boardEl = document.getElementById("board");
+    const keyboardEl = document.getElementById("keyboard");
+    const messageEl = document.getElementById("message");
+    const controlsEl = document.getElementById("controls");
+    const answerEl = document.getElementById("answer");
+
+    function initBoard() {
+      boardEl.innerHTML = "";
+      board = [];
+
+      for (let r = 0; r < ROWS; r++) {
+        const rowEl = document.createElement("div");
+        rowEl.className = "row";
+
+        const rowData = [];
+        for (let c = 0; c < COLS; c++) {
+          const tile = document.createElement("div");
+          tile.className = "tile";
+          tile.dataset.row = r;
+          tile.dataset.col = c;
+          rowEl.appendChild(tile);
+          rowData.push("");
+        }
+
+        boardEl.appendChild(rowEl);
+        board.push(rowData);
+      }
+    }
+
+    function initKeyboard() {
+      keyboardEl.innerHTML = "";
+
+      const keyboardRows = [
+        ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+        ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
+        ["enter", "z", "x", "c", "v", "b", "n", "m", "back"]
+      ];
+
+      keyboardRows.forEach(row => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "keyboard-row";
+
+        row.forEach(key => {
+          const btn = document.createElement("button");
+          btn.className = "key";
+          btn.dataset.key = key;
+          btn.textContent = key === "back" ? "⌫" : key;
+
+          if (key === "enter" || key === "back") {
+            btn.classList.add("wide");
+          }
+
+          btn.addEventListener("click", () => handleKeyPress(key));
+          rowEl.appendChild(btn);
+        });
+
+        keyboardEl.appendChild(rowEl);
+      });
+    }
+
+    function clearControls() {
+      controlsEl.innerHTML = "";
+    }
+
+    function showEndButtons() {
+      clearControls();
+
+      const retryBtn = document.createElement("button");
+      retryBtn.textContent = "Retry";
+      retryBtn.addEventListener("click", resetGame);
+
+      const revealBtn = document.createElement("button");
+      revealBtn.textContent = "Reveal Answer";
+      revealBtn.addEventListener("click", revealAnswer);
+
+      controlsEl.appendChild(retryBtn);
+      controlsEl.appendChild(revealBtn);
+    }
+
+    function resetGame() {
+      currentRow = 0;
+      currentCol = 0;
+      gameOver = false;
+      keyStates = {};
+      answerEl.textContent = "";
+      messageEl.textContent = "";
+      clearControls();
+      initBoard();
+      initKeyboard();
+    }
+
+    function revealAnswer() {
+      answerEl.textContent = `Answer: ${SECRET_WORD.toUpperCase()}`;
+    }
+
+    function getTile(row, col) {
+      return document.querySelector(`.tile[data-row="${row}"][data-col="${col}"]`);
+    }
+
+    function setMessage(text) {
+      messageEl.textContent = text;
+    }
+
+    function updateBoardDisplay() {
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const tile = getTile(r, c);
+          const letter = board[r][c];
+          tile.textContent = letter ? letter.toUpperCase() : "";
+          tile.classList.toggle("filled", !!letter);
+        }
+      }
+    }
+
+    function priority(state) {
+      const order = {
+        absent: 1,
+        present: 2,
+        correct: 3
+      };
+      return order[state] || 0;
+    }
+
+    function setKeyState(letter, state) {
+      const existing = keyStates[letter];
+      if (!existing || priority(state) > priority(existing)) {
+        keyStates[letter] = state;
+      }
+    }
+
+    function updateKeyboardDisplay() {
+      document.querySelectorAll(".key").forEach(btn => {
+        const key = btn.dataset.key;
+        if (key.length !== 1) return;
+
+        btn.classList.remove("correct", "present", "absent");
+        if (keyStates[key]) {
+          btn.classList.add(keyStates[key]);
+        }
+      });
+    }
+
+    function handleKeyPress(key) {
+      if (gameOver) return;
+
+      if (key === "back") {
+        if (currentCol > 0) {
+          currentCol--;
+          board[currentRow][currentCol] = "";
+          updateBoardDisplay();
+        }
+        return;
+      }
+
+      if (key === "enter") {
+        submitGuess();
+        return;
+      }
+
+      if (/^[a-z]$/.test(key)) {
+        if (currentCol < COLS) {
+          board[currentRow][currentCol] = key;
+          currentCol++;
+          updateBoardDisplay();
+        }
+      }
+    }
+
+    function evaluateGuess(guess, answer) {
+      const result = Array(COLS).fill("absent");
+      const remainingAnswer = answer.split("");
+      const guessLetters = guess.split("");
+
+      // Correct spot
+      for (let i = 0; i < COLS; i++) {
+        if (guessLetters[i] === remainingAnswer[i]) {
+          result[i] = "correct";
+          remainingAnswer[i] = null;
+          guessLetters[i] = null;
+        }
+      }
+
+      // Wrong spot but present
+      for (let i = 0; i < COLS; i++) {
+        if (guessLetters[i] === null) continue;
+
+        const foundIndex = remainingAnswer.indexOf(guessLetters[i]);
+        if (foundIndex !== -1) {
+          result[i] = "present";
+          remainingAnswer[foundIndex] = null;
+        }
+      }
+
+      return result;
+    }
+
+    function colorRow(rowIndex, guess, result) {
+      for (let i = 0; i < COLS; i++) {
+        const tile = getTile(rowIndex, i);
+        tile.classList.add(result[i]);
+        setKeyState(guess[i], result[i]);
+      }
+      updateKeyboardDisplay();
+    }
+
+    function submitGuess() {
+      if (currentCol < COLS) {
+        setMessage("Guess must be 5 letters.");
+        return;
+      }
+
+      const guess = board[currentRow].join("").toLowerCase();
+      setMessage("");
+
+      const result = evaluateGuess(guess, SECRET_WORD);
+      colorRow(currentRow, guess, result);
+
+      if (guess === SECRET_WORD) {
+        gameOver = true;
+        setMessage("Correct.");
+        answerEl.textContent = `Answer: ${SECRET_WORD.toUpperCase()}`;
+        clearControls();
+        return;
+      }
+
+      currentRow++;
+      currentCol = 0;
+
+      if (currentRow >= ROWS) {
+        gameOver = true;
+        setMessage("Out of tries.");
+        showEndButtons();
+      }
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (gameOver) return;
+
+      if (e.key === "Backspace") {
+        handleKeyPress("back");
+      } else if (e.key === "Enter") {
+        handleKeyPress("enter");
+      } else {
+        const key = e.key.toLowerCase();
+        if (/^[a-z]$/.test(key)) {
+          handleKeyPress(key);
+        }
+      }
+    });
+
+    resetGame();
+  </script>
+</body>
+</html>
